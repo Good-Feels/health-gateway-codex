@@ -21,6 +21,14 @@ codex plugin add health-gateway@health-gateway
 Restart Codex, begin a new chat, and ask Codex to use Health Gateway. Your
 browser will open the secure Health Gateway connection flow.
 
+## Versioned package
+
+Every published version is also available as a downloadable package on the
+[Releases page](https://github.com/Good-Feels/health-gateway-codex/releases).
+The marketplace install above is recommended because Codex can manage the
+plugin directly; the package is useful for review, archiving, and manual
+installation.
+
 The iPhone app and connection guide are at
 [healthgateway.app](https://healthgateway.app/setup).
 
