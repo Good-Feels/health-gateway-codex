@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import {
   HealthGatewayBridge,
@@ -106,6 +108,146 @@ test('interactive OAuth exchanges the code before showing branded success', asyn
   assert.equal(saved.refreshToken, 'refresh_123');
 });
 
+test('simultaneous plugin processes open only one authorization window', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'health-gateway-single-flight-'));
+  const credentialPath = join(directory, 'credentials.json');
+  let authorizationWindows = 0;
+  let registrations = 0;
+  let tokenExchanges = 0;
+  let callbackCompletion;
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url);
+    if (value.endsWith('/oauth/register')) {
+      registrations += 1;
+      return Response.json({ client_id: 'client_shared' }, { status: 201 });
+    }
+    if (value.endsWith('/oauth/token')) {
+      tokenExchanges += 1;
+      return Response.json({
+        access_token: 'access_shared',
+        refresh_token: 'refresh_shared',
+        expires_in: 3600,
+        scope: 'health.read'
+      });
+    }
+    return globalThis.fetch(url, options);
+  };
+  const launchBrowser = async (authorizationUrl) => {
+    authorizationWindows += 1;
+    const url = new URL(authorizationUrl);
+    const callback = new URL(url.searchParams.get('redirect_uri'));
+    callback.searchParams.set('code', 'code_shared');
+    callback.searchParams.set('state', url.searchParams.get('state'));
+    callbackCompletion = new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        try {
+          const response = await globalThis.fetch(callback);
+          await response.text();
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      }, 75);
+    });
+  };
+  const clients = Array.from({ length: 32 }, () => new HealthGatewayOAuth({
+    fetchImpl,
+    credentialPath,
+    iconPath: join(directory, 'missing-icon.png'),
+    origin: 'https://auth.example',
+    resource: 'https://resource.example/mcp',
+    launchBrowser
+  }));
+
+  const tokens = await Promise.all(clients.map((client) => client.accessToken()));
+  await callbackCompletion;
+
+  assert.deepEqual(new Set(tokens), new Set(['access_shared']));
+  assert.equal(authorizationWindows, 1);
+  assert.equal(registrations, 1);
+  assert.equal(tokenExchanges, 1);
+  await assert.rejects(
+    stat(`${credentialPath}.authorization.lock`),
+    (error) => error?.code === 'ENOENT'
+  );
+});
+
+test('separate bridge processes share one authorization owner', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'health-gateway-process-lock-'));
+  const credentialPath = join(directory, 'credentials.json');
+  const launchMarkerPath = join(directory, 'authorization-windows.txt');
+  const bridgeUrl = pathToFileURL(join(import.meta.dirname, 'bridge.mjs')).href;
+  const worker = `
+    import { appendFile } from 'node:fs/promises';
+    import { HealthGatewayOAuth, writeCredentials } from ${JSON.stringify(bridgeUrl)};
+    const [credentialPath, launchMarkerPath] = process.argv.slice(1);
+    const oauth = new HealthGatewayOAuth({ credentialPath });
+    oauth.authorize = async () => {
+      await appendFile(launchMarkerPath, 'window\\n');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const credentials = {
+        accessToken: 'shared_process_access',
+        refreshToken: 'shared_process_refresh',
+        expiresAt: Date.now() + 3_600_000
+      };
+      await writeCredentials(credentialPath, credentials);
+      return credentials;
+    };
+    if (await oauth.accessToken() !== 'shared_process_access') process.exitCode = 1;
+  `;
+
+  await Promise.all(Array.from({ length: 8 }, () => runNodeWorker(worker, [
+    credentialPath,
+    launchMarkerPath
+  ])));
+
+  assert.equal((await readFile(launchMarkerPath, 'utf8')).trim().split('\n').length, 1);
+  await assert.rejects(
+    stat(`${credentialPath}.authorization.lock`),
+    (error) => error?.code === 'ENOENT'
+  );
+});
+
+test('cancelled authorization does not cause waiting processes to open more windows', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'health-gateway-cancelled-flight-'));
+  const credentialPath = join(directory, 'credentials.json');
+  let authorizationWindows = 0;
+  const fetchImpl = async (url) => {
+    if (String(url).endsWith('/oauth/register')) {
+      return Response.json({ client_id: 'client_cancelled' }, { status: 201 });
+    }
+    return globalThis.fetch(url);
+  };
+  const launchBrowser = async (authorizationUrl) => {
+    authorizationWindows += 1;
+    const url = new URL(authorizationUrl);
+    const callback = new URL(url.searchParams.get('redirect_uri'));
+    callback.searchParams.set('error', 'access_denied');
+    callback.searchParams.set('state', url.searchParams.get('state'));
+    setTimeout(async () => {
+      const response = await globalThis.fetch(callback);
+      await response.text();
+    }, 75);
+  };
+  const clients = Array.from({ length: 32 }, () => new HealthGatewayOAuth({
+    fetchImpl,
+    credentialPath,
+    iconPath: join(directory, 'missing-icon.png'),
+    origin: 'https://auth.example',
+    resource: 'https://resource.example/mcp',
+    launchBrowser
+  }));
+
+  const results = await Promise.allSettled(clients.map((client) => client.accessToken()));
+
+  assert.ok(results.every((result) => result.status === 'rejected'));
+  assert.equal(authorizationWindows, 1);
+  await assert.rejects(
+    stat(`${credentialPath}.authorization.lock`),
+    (error) => error?.code === 'ENOENT'
+  );
+});
+
 test('refresh tokens rotate and avoid interactive sign-in', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'health-gateway-refresh-'));
   const credentialPath = join(directory, 'credentials.json');
@@ -170,3 +312,25 @@ test('bridge forwards MCP messages and retries once after an expired access toke
   assert.equal(requestHeaders[1].authorization, 'Bearer fresh');
   assert.equal(requestHeaders[1]['mcp-protocol-version'], '2025-11-25');
 });
+
+function runNodeWorker(code, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', code, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.once('error', reject);
+    child.once('exit', (exitCode, signal) => {
+      if (exitCode === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(signal
+        ? `bridge worker exited from signal ${signal}`
+        : `bridge worker exited with code ${exitCode ?? 1}: ${stderr}`));
+    });
+  });
+}

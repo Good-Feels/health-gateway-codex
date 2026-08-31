@@ -5,8 +5,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   chmod,
   mkdir,
+  open,
   readFile,
   rename,
+  stat,
   unlink,
   writeFile
 } from 'node:fs/promises';
@@ -20,8 +22,10 @@ export const HEALTH_GATEWAY_ENDPOINT = 'https://api.healthgateway.app/mcp';
 export const HEALTH_GATEWAY_ORIGIN = 'https://api.healthgateway.app';
 const OAUTH_SCOPE = 'health.read';
 const AUTH_TIMEOUT_MS = 30 * 60 * 1000;
+const AUTH_LOCK_POLL_MS = 200;
+const AUTH_LOCK_STALE_MS = AUTH_TIMEOUT_MS + 60 * 1000;
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
-const BRIDGE_VERSION = '1.0.1';
+const BRIDGE_VERSION = '1.0.2';
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = join(currentDirectory, '..');
 
@@ -61,6 +65,81 @@ export async function writeCredentials(path, credentials) {
     await unlink(temporaryPath).catch(() => {});
     throw error;
   }
+}
+
+async function tryAcquireAuthorizationLock(path) {
+  const directory = dirname(path);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700).catch(() => {});
+  let handle;
+  let created = false;
+  try {
+    handle = await open(path, 'wx', 0o600);
+    created = true;
+    await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: Date.now() })}\n`);
+    await handle.close();
+    handle = null;
+    await chmod(path, 0o600).catch(() => {});
+    return true;
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    if (created) {
+      await unlink(path).catch(() => {});
+    }
+    if (error?.code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function authorizationLockIsActive(path) {
+  let details;
+  try {
+    details = JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return false;
+    }
+    try {
+      const lockStat = await stat(path);
+      if (Date.now() - lockStat.mtimeMs > 5_000) {
+        await unlink(path).catch(() => {});
+        return false;
+      }
+    } catch (statError) {
+      if (statError?.code === 'ENOENT') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const ownerPid = Number(details?.pid);
+  const createdAt = Number(details?.createdAt);
+  if (
+    !Number.isSafeInteger(ownerPid)
+    || ownerPid <= 0
+    || !Number.isFinite(createdAt)
+    || Date.now() - createdAt > AUTH_LOCK_STALE_MS
+  ) {
+    await unlink(path).catch(() => {});
+    return false;
+  }
+  try {
+    process.kill(ownerPid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') {
+      await unlink(path).catch(() => {});
+      return false;
+    }
+    return true;
+  }
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function base64Url(value) {
@@ -219,12 +298,44 @@ export class HealthGatewayOAuth {
       }
     }
     if (!this.authorizationPromise) {
-      this.authorizationPromise = this.authorize().finally(() => {
+      this.authorizationPromise = this.authorizeAcrossProcesses().finally(() => {
         this.authorizationPromise = null;
       });
     }
     const authorized = await this.authorizationPromise;
     return authorized.accessToken;
+  }
+
+  async authorizeAcrossProcesses() {
+    const lockPath = `${this.credentialPath}.authorization.lock`;
+    const ownsLock = await tryAcquireAuthorizationLock(lockPath);
+    if (!ownsLock) {
+      return this.waitForSharedAuthorization(lockPath);
+    }
+    try {
+      const existing = await readCredentials(this.credentialPath);
+      if (existing.accessToken && existing.expiresAt > this.now() + TOKEN_EXPIRY_SKEW_MS) {
+        return existing;
+      }
+      return await this.authorize();
+    } finally {
+      await unlink(lockPath).catch(() => {});
+    }
+  }
+
+  async waitForSharedAuthorization(lockPath) {
+    const deadline = Date.now() + AUTH_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const credentials = await readCredentials(this.credentialPath);
+      if (credentials.accessToken && credentials.expiresAt > this.now() + TOKEN_EXPIRY_SKEW_MS) {
+        return credentials;
+      }
+      if (!(await authorizationLockIsActive(lockPath))) {
+        throw friendlyError('The Health Gateway sign-in ended before this connection completed. Choose Connect again to retry.');
+      }
+      await delay(AUTH_LOCK_POLL_MS);
+    }
+    throw friendlyError('Health Gateway sign-in timed out. Choose Connect again to restart.');
   }
 
   async exchangeRefreshToken(credentials) {
