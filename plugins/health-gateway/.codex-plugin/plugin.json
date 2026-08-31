@@ -1,0 +1,43 @@
+{
+  "name": "health-gateway",
+  "version": "1.0.0",
+  "description": "Privately explore the Apple Health data you choose to sync with Health Gateway.",
+  "author": {
+    "name": "Good Feels, Inc.",
+    "email": "hello@getgoodfeels.com",
+    "url": "https://healthgateway.app"
+  },
+  "homepage": "https://healthgateway.app/setup",
+  "repository": "https://github.com/Good-Feels/health-gateway-codex",
+  "license": "Proprietary",
+  "keywords": [
+    "apple-health",
+    "healthkit",
+    "wellness",
+    "mcp"
+  ],
+  "interface": {
+    "displayName": "Health Gateway",
+    "shortDescription": "Explore your synced Apple Health data privately.",
+    "longDescription": "Health Gateway gives Codex read-only access to the Apple Health categories you choose to sync. Sign in securely, ask natural-language questions, and revoke access anytime in the iPhone app.",
+    "developerName": "Good Feels, Inc.",
+    "category": "Health & Fitness",
+    "capabilities": [
+      "Apple Health summaries",
+      "Workout and sleep insights",
+      "Read-only private access"
+    ],
+    "websiteURL": "https://healthgateway.app",
+    "privacyPolicyURL": "https://healthgateway.app/privacy",
+    "termsOfServiceURL": "https://healthgateway.app/terms",
+    "defaultPrompt": [
+      "Summarize my activity today.",
+      "How has my sleep changed this week?",
+      "Compare my recent workouts."
+    ],
+    "brandColor": "#C92F68",
+    "composerIcon": "./assets/app-icon.png",
+    "logo": "./assets/app-icon.png"
+  },
+  "mcpServers": "./.mcp.json"
+}

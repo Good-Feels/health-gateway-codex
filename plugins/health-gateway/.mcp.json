@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "health_gateway": {
+      "command": "node",
+      "args": [
+        "./server/bridge.mjs"
+      ],
+      "cwd": ".",
+      "enabled": true,
+      "default_tools_approval_mode": "approve",
+      "tools": {
+        "submit_feedback": {
+          "approval_mode": "prompt"
+        }
+      },
+      "env_vars": [
+        "APPDATA",
+        "HOME",
+        "LOCALAPPDATA",
+        "PATH",
+        "USERPROFILE",
+        "XDG_CONFIG_HOME"
+      ],
+      "startup_timeout_sec": 1800,
+      "tool_timeout_sec": 120
+    }
+  }
+}
