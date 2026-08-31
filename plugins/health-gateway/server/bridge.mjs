@@ -21,7 +21,7 @@ export const HEALTH_GATEWAY_ORIGIN = 'https://api.healthgateway.app';
 const OAUTH_SCOPE = 'health.read';
 const AUTH_TIMEOUT_MS = 30 * 60 * 1000;
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
-const BRIDGE_VERSION = '1.0.0';
+const BRIDGE_VERSION = '1.0.1';
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = join(currentDirectory, '..');
 
@@ -368,8 +368,7 @@ export class HealthGatewayOAuth {
         scope: OAUTH_SCOPE,
         state,
         code_challenge: pkce.challenge,
-        code_challenge_method: 'S256',
-        resource: this.resource
+        code_challenge_method: 'S256'
       }).toString();
       await this.launchBrowser(authorizationUrl.toString());
     } catch (error) {

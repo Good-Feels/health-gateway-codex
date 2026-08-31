@@ -81,6 +81,7 @@ test('interactive OAuth exchanges the code before showing branded success', asyn
       const url = new URL(authorizationUrl);
       assert.equal(url.origin, 'https://auth.example');
       assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+      assert.equal(url.searchParams.getAll('resource').length, 0);
       const callback = new URL(url.searchParams.get('redirect_uri'));
       callback.searchParams.set('code', 'code_123');
       callback.searchParams.set('state', url.searchParams.get('state'));
@@ -100,6 +101,7 @@ test('interactive OAuth exchanges the code before showing branded success', asyn
   assert.equal(requests[1].body.grant_type, 'authorization_code');
   assert.equal(requests[1].body.code, 'code_123');
   assert.ok(requests[1].body.code_verifier);
+  assert.equal(requests[1].body.resource, 'https://resource.example/mcp');
   const saved = JSON.parse(await readFile(credentialPath, 'utf8'));
   assert.equal(saved.refreshToken, 'refresh_123');
 });
