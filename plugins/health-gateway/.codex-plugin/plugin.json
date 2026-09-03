@@ -1,6 +1,6 @@
 {
   "name": "health-gateway",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Privately explore the Apple Health data you choose to sync with Health Gateway.",
   "author": {
     "name": "Good Feels, Inc.",
@@ -9,13 +9,14 @@
   },
   "homepage": "https://healthgateway.app/setup",
   "repository": "https://github.com/Good-Feels/health-gateway-codex",
-  "license": "Proprietary",
+  "license": "Apache-2.0",
   "keywords": [
     "apple-health",
     "healthkit",
     "wellness",
     "mcp"
   ],
+  "skills": "./skills/",
   "interface": {
     "displayName": "Health Gateway",
     "shortDescription": "Explore your synced Apple Health data privately.",

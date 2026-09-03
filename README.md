@@ -6,6 +6,7 @@ choose to sync in the Health Gateway iPhone app.
 - Read-only access to your synced account
 - Sign in with Apple and renewable OAuth tokens
 - Fully branded local connection and recovery pages
+- Built-in guidance for complete, freshness-aware health summaries
 - No local storage of Health data
 - No third-party runtime dependencies
 
@@ -32,6 +33,13 @@ installation.
 The iPhone app and connection guide are at
 [healthgateway.app](https://healthgateway.app/setup).
 
+## Health insights skill
+
+The plugin includes a `health-insights` skill that teaches Codex to check sync
+freshness, use complete local date windows, deduplicate sleep records, avoid
+unnecessary raw-sample queries, distinguish missing data from zero, and keep
+personal health interpretations non-diagnostic.
+
 ## Privacy and security
 
 The plugin stores only OAuth client metadata and renewable connection tokens in
@@ -43,6 +51,11 @@ the computer.
 [Terms](https://healthgateway.app/terms) ·
 [Support](https://healthgateway.app/support)
 
-Copyright © 2026 Good Feels, Inc. All rights reserved. This repository is
-published for installation and security review; it is not an open-source
-license grant.
+## License and trademarks
+
+The plugin source is licensed under the Apache License, Version 2.0. The
+Health Gateway service, iPhone app, backend, and customer data are not included
+in this repository. Health Gateway, Good Feels, and their logos remain the
+trademarks and product branding of Good Feels, Inc.; the Apache license does
+not grant permission to use those marks beyond describing the source of the
+licensed plugin.

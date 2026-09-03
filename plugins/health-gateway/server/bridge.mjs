@@ -25,7 +25,7 @@ const AUTH_TIMEOUT_MS = 30 * 60 * 1000;
 const AUTH_LOCK_POLL_MS = 200;
 const AUTH_LOCK_STALE_MS = AUTH_TIMEOUT_MS + 60 * 1000;
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
-const BRIDGE_VERSION = '1.0.2';
+const BRIDGE_VERSION = '1.0.3';
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = join(currentDirectory, '..');
 
